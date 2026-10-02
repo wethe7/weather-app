@@ -1,0 +1,4 @@
+# Служебные каталоги DSH и служебные файлы
+.dsh-vision-router/
+.DS_Store
+Thumbs.db
