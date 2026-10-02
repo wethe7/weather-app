@@ -4,6 +4,11 @@
      backGROUNDS.png  2 колонки (pixel | ukiyo-e) × 5 строк (Ясно, Ночь, Облачно, Дождь, Закат)
      back_2.png       5 колонок × 2 строки (pixel)
      back_2uki-e.png  5 колонок × 2 строки (ukiyo-e)
+   Per-city сюжеты (Токио, Киото) — своя пара спрайтов, 2 колонки (день | ночь):
+     back_tokyo.png   1536×347, back_kyoto.png  1536×346 — для карточек
+     back_2_tokyo.png 941×836,  back_2_kyoto.png 941×828 — для детального экрана
+     строка одна, поэтому вид зависит только от дня/ночи, но не от темы
+   Основной фон приложения — отдельный слой #app-bg (back_gif.gif или свой фон).
    ========================================================================== */
 
 /* ═════════════════════ 0. Сброс ═════════════════════ */
@@ -97,6 +102,24 @@ body[data-theme="ukiyo-e"] {
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 2px, transparent 2px 5px);
 }
 
+/* ---- Основной фон приложения: #app-bg ---------------------------------- */
+/* Слой с z-index: -1 лежит ниже всего содержимого (карточек, панелей, текста)
+   и не перехватывает нажатия. Фон темы из body уходит на канву документа,
+   то есть тоже оказывается под этим слоем: пока грузится GIF, виден он же.
+   background-image перекрывает app.js, когда в теме есть свой фон из IndexedDB. */
+
+#app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--bg, #0b0e14);
+  background-image: url('back_gif.gif');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 /* ═════════════════════ 2. Каркас ═════════════════════ */
 
 .app {
@@ -133,6 +156,9 @@ body[data-theme="ukiyo-e"] {
   gap: 10px;
   padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
   flex: 0 0 auto;
+  /* на очень узких экранах (320 px) инструменты переносятся на вторую строку,
+     а не наезжают на название приложения */
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -157,6 +183,7 @@ body[data-theme="ukiyo-e"] {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  margin-left: auto;      /* остаётся справа и после переноса на вторую строку */
 }
 
 .theme-switch {
@@ -245,6 +272,8 @@ body[data-theme="ukiyo-e"] {
   /* backGROUNDS.png = 1536 × 1024, сетка 2 × 5 → ячейка 768 × 204.8 = ровно 3.75 : 1.
      Ровно та же пропорция у карточки = фон ложится пиксель в пиксель, без полосок
      от соседних ячеек. Никаких min-height / max-height — они ломают пропорцию.
+     Сюжетные карточки (back_tokyo.png 1536 × 347, back_kyoto.png 1536 × 346)
+     сохраняют ту же пропорцию: панель внутри листа подгоняет «cover»-подгонка в app.js.
      Внутренних padding у карточки нет: .card-content лежит абсолютно поверх фона. */
   aspect-ratio: 3.75 / 1;
   container-type: inline-size;
@@ -288,6 +317,12 @@ body[data-theme="ukiyo-e"] {
 .card-bg .sprite-layer { transform: scale(1.1); }
 .detail-bg .sprite-layer { transform: scale(1.04); }
 
+/* Карточки с сюжетом (back_<story>.png): кадр уже подогнан под карточку
+   «cover»-подгонкой в app.js, поэтому лишний зум 1.1 → 1.18 только съедал бы
+   края рисунка. Оставляем минимальный запас на округления. */
+.city-card[data-story] .card-bg .sprite-layer { transform: scale(1.04); }
+.city-card[data-story] .sprite-layer.is-active { animation-name: spriteDriftStory; }
+
 .sprite-layer.is-active {
   opacity: 1;
   animation: spriteDrift 32s ease-in-out infinite alternate;
@@ -296,6 +331,11 @@ body[data-theme="ukiyo-e"] {
 @keyframes spriteDrift {
   from { transform: scale(1.1); }
   to   { transform: scale(1.18) translate3d(-1%, 0.6%, 0); }
+}
+
+@keyframes spriteDriftStory {
+  from { transform: scale(1.04); }
+  to   { transform: scale(1.09) translate3d(-0.6%, 0.4%, 0); }
 }
 
 .card-scrim {
@@ -1020,7 +1060,7 @@ body[data-theme="pixel"] .detail-temp { text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.9
   position: absolute;
   left: 50%;
   bottom: calc(96px + env(safe-area-inset-bottom, 0px));
-  z-index: 60;
+  z-index: 80;               /* выше модального окна «Свой фон» (70) */
   max-width: 82%;
   padding: 11px 16px;
   border-radius: 16px;
@@ -1042,6 +1082,166 @@ body[data-theme="pixel"] .detail-temp { text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.9
   padding: 40px 20px;
   color: #fff;
   text-align: center;
+}
+
+/* ═════════════════════ 9.1 Модальное окно «Свой фон» ═════════════════════ */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.modal-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 7, 12, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.modal-box {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--panel-border);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  background: var(--panel-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.55);
+  animation: modalIn 0.24s cubic-bezier(0.2, 0.75, 0.3, 1);
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modal-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+
+body[data-theme="ukiyo-e"] .modal-title { font-size: 19px; }
+
+.bg-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.bg-note code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.bg-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 14px;
+  padding: 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+}
+
+/* активная вкладка — одна; скрытые панели убирает глобальное [hidden] */
+.bg-pane:not([hidden]) { display: block; }
+
+.bg-tab {
+  flex: 1 1 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 13px;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.bg-tab.is-active {
+  background: var(--accent);
+  color: var(--btn-fg);
+  font-weight: 600;
+}
+
+body[data-theme="ukiyo-e"] .bg-tab { font-size: 14px; }
+
+.bg-preview {
+  height: 150px;
+  border-radius: 18px;
+  border: 1px solid var(--panel-border);
+  background-color: #0b0e14;
+  background-image: url('back_gif.gif');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.bg-file {
+  display: block;
+  position: relative;
+  margin-top: 12px;
+  text-align: center;
+}
+
+.bg-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.bg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.bg-actions .btn { flex: 1 1 150px; }
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--panel-border);
+  color: var(--text);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.bg-status {
+  margin-top: 10px;
+  min-height: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* ═════════════════════ 10. Укиё-э: подстройка под шрифт ═════════════════════ */
@@ -1070,6 +1270,17 @@ body[data-theme="ukiyo-e"] .search-info { font-size: 13px; }
 @media (min-width: 560px) {
   .app, .screen-detail {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 30px 80px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* На высоких экранах окно «Свой фон» центрируется и раскрывается со всех сторон */
+@media (min-height: 620px) {
+  .modal { align-items: center; padding: 20px; }
+  .modal-box {
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    padding-bottom: 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   }
 }
 

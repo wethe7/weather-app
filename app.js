@@ -4,8 +4,12 @@
    • Только статика, без бэкенда: данные берутся напрямую из Open-Meteo.
        поиск города : https://geocoding-api.open-meteo.com/v1/search
        погода       : https://api.open-meteo.com/v1/forecast
-   • Спрайты-фоны (backGROUNDS.png, back_2.png, back_2uki-e.png) лежат рядом,
-     пути относительные — работает и локально, и на GitHub Pages.
+   • Спрайты-фоны лежат рядом, пути относительные — работает и локально,
+     и на GitHub Pages. Общие: backGROUNDS.png, back_2.png, back_2uki-e.png.
+     Per-city: back_<story>.png (карточки) и back_2_<story>.png (детальный
+     экран); сетки у сюжетов разные — см. STORY_CARD_FIT / STORY_DETAIL_FIT.
+   • Основной фон приложения — слой #app-bg: back_gif.gif или свой фон темы
+     из IndexedDB (ключи customBg_pixel / customBg_ukiyoe, Blob, до 5 МБ).
    ========================================================================== */
 (function () {
   'use strict';
@@ -26,6 +30,48 @@
   /* Спрайты. Пути относительные — важно для GitHub Pages. */
   var SPRITE_CARDS   = 'backGROUNDS.png';   // 2 колонки × 5 строк
   var SPRITE_DETAIL  = { pixel: 'back_2.png', 'ukiyo-e': 'back_2uki-e.png' }; // 5 × 2
+
+  /* Per-city сюжеты: свой спрайт вместо общего. Ключ — name города в нижнем регистре. */
+  var CITY_STORIES = {
+    'токио': 'tokyo', 'киото': 'kyoto',
+    'tokyo': 'tokyo', 'kyoto': 'kyoto'
+  };
+
+  /* back_<story>.png — карточки, back_2_<story>.png — детальный экран.
+     Сетки у сюжетов разные, поэтому геометрия задана отдельно для каждого:
+       tokyo — 2 строки (pixel | ukiyo-e) × 2 колонки (день | ночь);
+       kyoto — 1 строка: 2 колонки (день | ночь), вид от темы не зависит. */
+  var STORY_CARDS  = { tokyo: 'back_tokyo.png', kyoto: 'back_kyoto.png' };
+  var STORY_DETAIL = { tokyo: 'back_2_tokyo.png', kyoto: 'back_2_kyoto.png' };
+
+  /* Геометрия карточек. Оба сюжетных листа — 1536 px в ширину, 2 колонки
+     (день слева, ночь справа) и одна строка, поэтому тема вид не меняет.
+     Панели нарисованы с тёмными полями, а карточка всегда 3.75 : 1, поэтому
+     спрайт накладывается «cover»-подгонкой по ширине (205.62 % = 1536 / 747),
+     по вертикали карточке достаётся окно 199 строк (747 / 3.75); положение окна
+     выбрано по максимуму детализации кадра.
+
+     tokyo: back_tokyo.png 1536 × 347, панель 747 × 309 (2.42 : 1), окно от y = 134;
+     kyoto: back_kyoto.png 1536 × 346, панель 746 × 319 (2.34 : 1), окно от y = 136. */
+  var STORY_CARD_FIT = {
+    tokyo: {
+      size: '205.62% 174.20%',                       // 1536/747 и 347 · 3.75/747
+      posX: { day: '1.9%', night: '98.35%' },        // x = 15 / 776
+      posY: { pixel: '90.66%', 'ukiyo-e': '90.66%' } // y = 134
+    },
+    kyoto: {
+      size: '205.62% 173.69%',                       // 1536/747 и 346 · 3.75/747
+      posX: { day: '1.9%', night: '98.35%' },        // x = 15 / 776
+      posY: { pixel: '92.64%', 'ukiyo-e': '92.64%' } // y = 136
+    }
+  };
+
+  /* Геометрия детального экрана: у обоих листов 2 колонки (день слева,
+     ночь справа) и одна строка, поэтому по высоте берётся весь кадр. */
+  var STORY_DETAIL_FIT = {
+    tokyo: { size: '200% 100%', posY: { pixel: 0, 'ukiyo-e': 0 } },
+    kyoto: { size: '200% 100%', posY: { pixel: 0, 'ukiyo-e': 0 } }
+  };
 
   /* backGROUNDS.png: строки сверху вниз — Ясно, Ночь, Облачно, Дождь, Закат */
   var CARD_ROWS = { clear: 0, night: 1, cloudy: 2, rain: 3, sunset: 4 };
@@ -556,8 +602,17 @@
     active.classList.remove('is-active');
   }
 
-  /* backGROUNDS.png: 2 колонки (pixel / ukiyo-e) × 5 строк */
-  function cardSprite(cardState) {
+  /* backGROUNDS.png: 2 колонки (pixel / ukiyo-e) × 5 строк.
+     Для городов с сюжетом — back_<story>.png, сетка задаётся в STORY_CARD_FIT. */
+  function cardSprite(cardState, story, isDay) {
+    if (story && STORY_CARDS[story]) {
+      var fit = STORY_CARD_FIT[story] || STORY_CARD_FIT.tokyo;
+      return {
+        url: STORY_CARDS[story],
+        size: fit.size,
+        position: fit.posX[isDay ? 'day' : 'night'] + ' ' + fit.posY[state.theme]
+      };
+    }
     var col = (state.theme === 'ukiyo-e') ? 1 : 0;
     var row = CARD_ROWS[cardState] || 0;
     return {
@@ -567,14 +622,43 @@
     };
   }
 
-  /* back_2.png / back_2uki-e.png: 5 колонок × 2 строки */
-  function detailSprite(detailState) {
+  /* back_2.png / back_2uki-e.png: 5 колонок × 2 строки.
+     Для городов с сюжетом — back_2_<story>.png, сетка задаётся в STORY_DETAIL_FIT. */
+  function detailSprite(detailState, story, isDay) {
+    if (story && STORY_DETAIL[story]) {
+      var dfit = STORY_DETAIL_FIT[story] || STORY_DETAIL_FIT.tokyo;
+      return {
+        url: STORY_DETAIL[story],
+        size: dfit.size,
+        position: (isDay ? 0 : 100) + '% ' + dfit.posY[state.theme] + '%'
+      };
+    }
     var cell = DETAIL_CELL[detailState] || DETAIL_CELL.clear;
     return {
       url: SPRITE_DETAIL[state.theme] || SPRITE_DETAIL.pixel,
       size: '500% 200%',
       position: ((cell[0] / 4) * 100) + '% ' + (cell[1] * 100) + '%'
     };
+  }
+
+  /* Сюжет города: 'tokyo' для Токио и Киото, иначе null */
+  function storyFor(city) {
+    if (!city || !city.name) return null;
+    var name = String(city.name).trim().toLowerCase();
+    return CITY_STORIES[name] || null;
+  }
+
+  /* Ключ текущего кадра: у сюжетных спрайтов важны только день и ночь,
+     у общих — погодное состояние (по нему же tick() понимает, что пора менять фон) */
+  function spriteKeyFor(story, cardState, isDay) {
+    return story ? (story + ':' + (isDay ? 'day' : 'night')) : cardState;
+  }
+
+  /* День/ночь по местным часам города — только для фона-заглушки,
+     пока не пришли данные API (там фаза считается по восходу и закату) */
+  function dayGuess(tz) {
+    var h = localInfo(tz).hour;
+    return h >= 7 && h < 19;
   }
 
   /* ═════════════════════════ 8. Работа с API ═════════════════════════ */
@@ -806,6 +890,9 @@
     card.dataset.cityId = city.id;
     card.style.setProperty('--i', String(index));
 
+    var story = storyFor(city);
+    if (story) card.dataset.story = story;
+
     card.innerHTML =
       '<div class="card-bg"><div class="sprite-layer"></div><div class="sprite-layer"></div></div>' +
       '<div class="card-fx"></div>' +
@@ -864,6 +951,8 @@
     setText(cityEl, city.name);
     setText(timeEl, hhmm(city.timezone));
 
+    var story = storyFor(city);
+
     if (!w) {
       var err = state.errors[city.id];
       setText(descEl, err ? 'Нет данных — проверьте связь' : 'Загрузка…');
@@ -873,14 +962,16 @@
       card.classList.remove('is-error');
       if (err) card.classList.add('is-error');
       fxEl.className = 'card-fx';
-      var ph = cardSprite('clear');
+      var isDayGuess = dayGuess(city.timezone);
+      card.dataset.state = spriteKeyFor(story, 'clear', isDayGuess);
+      var ph = cardSprite('clear', story, isDayGuess);
       applySprite(bgEl, ph.url, ph.size, ph.position);
       return;
     }
 
     var st = liveStates(w);
     card.classList.remove('is-error');
-    card.dataset.state = st.cardState;
+    card.dataset.state = spriteKeyFor(story, st.cardState, st.isDay);
 
     setText(descEl, w.desc);
     setText(tempEl, tempText(w.current.temp));
@@ -893,7 +984,7 @@
     else if (st.icon === 'snow') fx = 'snow';
     fxEl.className = 'card-fx fx-' + fx;
 
-    var sp = cardSprite(st.cardState);
+    var sp = cardSprite(st.cardState, story, st.isDay);
     applySprite(bgEl, sp.url, sp.size, sp.position);
   }
 
@@ -1100,6 +1191,7 @@
 
     state.activeCityId = cityId;
     var w = state.weather[cityId];
+    var story = storyFor(city);
 
     setText($('detailCity'), city.name);
 
@@ -1114,7 +1206,7 @@
       $('dailyList').textContent = '';
       $('hourlyStrip').textContent = '';
       clearChart();
-      var ph = detailSprite('clear');
+      var ph = detailSprite('clear', story, dayGuess(city.timezone));
       applySprite($('detailBg'), ph.url, ph.size, ph.position);
       if (!err) loadWeather(city).then(null, function () {});
       return;
@@ -1128,7 +1220,7 @@
     $('detailIcon').innerHTML = iconSVG(st.icon);
     $('detailMeta').innerHTML = metaHTML(w);
 
-    var sp = detailSprite(st.detailState);
+    var sp = detailSprite(st.detailState, story, st.isDay);
     applySprite($('detailBg'), sp.url, sp.size, sp.position);
 
     var fx = 'none';
@@ -1397,8 +1489,221 @@
       if (!$('screenDetail').hidden) drawChart();
     }
 
+    /* у каждой темы может быть свой фон приложения */
+    applyAppBackground();
+
     tgTheme();
     if (!silent) toast(state.theme === 'ukiyo-e' ? 'Стиль: укиё-э' : 'Стиль: пиксель');
+  }
+
+  /* ═════════════════════════ 12.1 Свой фон (IndexedDB) ═════════════════════════ */
+  /* Свой фон хранится Blob'ом в IndexedDB: ключи customBg_pixel и customBg_ukiyoe.
+     Для каждой темы он подменяет back_gif.gif в слое #app-bg; сервер не участвует. */
+
+  var BG_DB     = 'weather-app-bg';
+  var BG_STORE  = 'backgrounds';
+  var BG_MAX    = 5 * 1024 * 1024;
+  var BG_KEY    = { pixel: 'customBg_pixel', 'ukiyo-e': 'customBg_ukiyoe' };
+  var BG_LABEL  = { pixel: 'Pixel', 'ukiyo-e': 'Ukiyo-e' };
+  var BG_THEMES = ['pixel', 'ukiyo-e'];
+
+  var bgState = {
+    tab: 'pixel',
+    stored:    { pixel: null, 'ukiyo-e': null },   // Blob, который лежит в IndexedDB
+    storedUrl: { pixel: '',   'ukiyo-e': '' },
+    staged:    { pixel: null, 'ukiyo-e': null },   // выбран, но ещё не применён
+    stagedUrl: { pixel: '',   'ukiyo-e': '' },
+    stagedName:{ pixel: '',   'ukiyo-e': '' }
+  };
+
+  /* ---- IndexedDB ---- */
+
+  function idbOpen() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('IndexedDB недоступен')); return; }
+      var req = indexedDB.open(BG_DB, 1);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(BG_STORE)) db.createObjectStore(BG_STORE);
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error || new Error('IndexedDB')); };
+    });
+  }
+
+  function bgGet(key) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(BG_STORE, 'readonly');
+        var req = tx.objectStore(BG_STORE).get(key);
+        req.onsuccess = function () { resolve(req.result || null); };
+        req.onerror = function () { reject(req.error); };
+        tx.oncomplete = function () { db.close(); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+        tx.onabort = function () { db.close(); reject(tx.error); };
+      });
+    });
+  }
+
+  function bgWrite(key, blob) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(BG_STORE, 'readwrite');
+        var store = tx.objectStore(BG_STORE);
+        if (blob) store.put(blob, key); else store.delete(key);
+        tx.oncomplete = function () { db.close(); resolve(true); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+        tx.onabort = function () { db.close(); reject(tx.error); };
+      });
+    });
+  }
+
+  /* ---- Blob ↔ object URL ---- */
+
+  function makeUrl(blob) {
+    if (!blob || !window.URL || typeof URL.createObjectURL !== 'function') return '';
+    try { return URL.createObjectURL(blob); } catch (e) { return ''; }
+  }
+
+  function dropUrl(url) {
+    if (!url) return;
+    try { URL.revokeObjectURL(url); } catch (e) {}
+  }
+
+  function setStored(theme, blob) {
+    dropUrl(bgState.storedUrl[theme]);
+    bgState.stored[theme] = blob || null;
+    bgState.storedUrl[theme] = makeUrl(blob);
+  }
+
+  function setStaged(theme, blob, name) {
+    dropUrl(bgState.stagedUrl[theme]);
+    bgState.staged[theme] = blob || null;
+    bgState.stagedUrl[theme] = makeUrl(blob);
+    bgState.stagedName[theme] = name || '';
+  }
+
+  /* ---- Применение к слою фона ---- */
+
+  function applyAppBackground() {
+    var layer = $('app-bg');
+    if (!layer) return;
+    var url = bgState.storedUrl[state.theme] || '';
+    if (url) layer.style.backgroundImage = 'url("' + url + '")';
+    else layer.style.removeProperty('background-image');   // вернётся back_gif.gif из style.css
+  }
+
+  function loadBackgrounds() {
+    return Promise.all(BG_THEMES.map(function (theme) {
+      return bgGet(BG_KEY[theme]).then(function (blob) {
+        if (blob) setStored(theme, blob);
+      }, function () { /* приватный режим или IndexedDB недоступен */ });
+    })).then(function () { applyAppBackground(); });
+  }
+
+  /* ---- Интерфейс модального окна ---- */
+
+  function bgPaneEl(attr, theme) {
+    return document.querySelector('[' + attr + '="' + theme + '"]');
+  }
+
+  function bgSizeText(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' МБ';
+    if (bytes >= 1024) return Math.round(bytes / 1024) + ' КБ';
+    return bytes + ' Б';
+  }
+
+  function renderBgPane(theme) {
+    var preview = bgPaneEl('data-bg-preview', theme);
+    var status  = bgPaneEl('data-bg-status', theme);
+    var apply   = bgPaneEl('data-bg-apply', theme);
+    var reset   = bgPaneEl('data-bg-reset', theme);
+
+    var stagedUrl = bgState.stagedUrl[theme];
+    var storedUrl = bgState.storedUrl[theme];
+    var src = stagedUrl || storedUrl || 'back_gif.gif';
+
+    if (preview) preview.style.backgroundImage = 'url("' + src + '")';
+    if (apply) apply.disabled = !bgState.staged[theme];
+    if (reset) reset.disabled = !bgState.staged[theme] && !bgState.stored[theme];
+
+    if (!status) return;
+    if (bgState.staged[theme]) {
+      status.textContent = 'Выбрано: «' + (bgState.stagedName[theme] || 'изображение') + '» · ' +
+        bgSizeText(bgState.staged[theme].size) + '. Нажмите «Применить», чтобы сохранить.';
+    } else if (bgState.stored[theme]) {
+      status.textContent = 'Свой фон сохранён и показывается в теме «' + BG_LABEL[theme] + '».';
+    } else {
+      status.textContent = 'Сейчас используется стандартный фон (back_gif.gif).';
+    }
+  }
+
+  function renderBgModal() {
+    BG_THEMES.forEach(renderBgPane);
+    Array.prototype.forEach.call(document.querySelectorAll('.bg-tab'), function (btn) {
+      var on = btn.getAttribute('data-bg-tab') === bgState.tab;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.bg-pane'), function (pane) {
+      pane.hidden = pane.getAttribute('data-bg-pane') !== bgState.tab;
+    });
+  }
+
+  function openBgModal() {
+    bgState.tab = (state.theme === 'ukiyo-e') ? 'ukiyo-e' : 'pixel';
+    renderBgModal();
+    $('bgModal').hidden = false;
+  }
+
+  function closeBgModal() {
+    /* несохранённые превью не переживают закрытие окна */
+    BG_THEMES.forEach(function (theme) { setStaged(theme, null, ''); });
+    renderBgModal();
+    $('bgModal').hidden = true;
+  }
+
+  function pickBgFile(theme, input) {
+    var file = (input && input.files) ? input.files[0] : null;
+    if (input) input.value = '';                 // повторный выбор того же файла
+    if (!file) return;
+
+    var isImage = file.type ? file.type.indexOf('image/') === 0
+                            : /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(file.name || '');
+    if (!isImage) { alert('Можно загрузить только изображение'); return; }
+    if (file.size > BG_MAX) { alert('Файл слишком большой, максимум 5 МБ'); return; }
+
+    setStaged(theme, file, file.name);
+    renderBgPane(theme);
+  }
+
+  function applyBgFile(theme) {
+    var blob = bgState.staged[theme];
+    if (!blob) return;
+    bgWrite(BG_KEY[theme], blob).then(function () {
+      setStored(theme, blob);
+      setStaged(theme, null, '');
+      applyAppBackground();
+      renderBgModal();
+      toast(theme === state.theme
+        ? 'Свой фон применён'
+        : 'Фон сохранён для темы «' + BG_LABEL[theme] + '»');
+    }, function () {
+      alert('Не удалось сохранить фон: браузер не дал доступ к IndexedDB.');
+    });
+  }
+
+  function resetBgFile(theme) {
+    bgWrite(BG_KEY[theme], null).then(function () {
+      setStored(theme, null);
+      setStaged(theme, null, '');
+      applyAppBackground();
+      renderBgModal();
+      toast('Стандартный фон возвращён');
+    }, function () {
+      alert('Не удалось сбросить фон: браузер не дал доступ к IndexedDB.');
+    });
   }
 
   /* ═════════════════════════ 13. Навигация ═════════════════════════ */
@@ -1498,10 +1803,13 @@
       var w = state.weather[city.id];
       if (!w) return;
       var st = liveStates(w);
-      /* фон зависит от времени суток — обновляем при смене фазы */
-      if (card.dataset.state !== st.cardState) {
-        card.dataset.state = st.cardState;
-        var sp = cardSprite(st.cardState);
+      /* фон зависит от времени суток — обновляем при смене фазы
+         (у сюжетных спрайтов — при смене день/ночь) */
+      var story = storyFor(city);
+      var key = spriteKeyFor(story, st.cardState, st.isDay);
+      if (card.dataset.state !== key) {
+        card.dataset.state = key;
+        var sp = cardSprite(st.cardState, story, st.isDay);
         applySprite(card.querySelector('.card-bg'), sp.url, sp.size, sp.position);
       }
     });
@@ -1558,6 +1866,32 @@
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
 
+    /* ---- окно «Свой фон» ---- */
+    $('btnSettings').addEventListener('click', openBgModal);
+    $('btnBgClose').addEventListener('click', closeBgModal);
+    $('bgModal').addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t && t.getAttribute && t.getAttribute('data-bg-close') !== null) closeBgModal();
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.bg-tab'), function (btn) {
+      btn.addEventListener('click', function () {
+        bgState.tab = btn.getAttribute('data-bg-tab');
+        renderBgModal();
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-bg-input]'), function (input) {
+      input.addEventListener('change', function () { pickBgFile(input.getAttribute('data-bg-input'), input); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-bg-apply]'), function (btn) {
+      btn.addEventListener('click', function () { applyBgFile(btn.getAttribute('data-bg-apply')); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-bg-reset]'), function (btn) {
+      btn.addEventListener('click', function () { resetBgFile(btn.getAttribute('data-bg-reset')); });
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && !$('bgModal').hidden) closeBgModal();
+    });
+
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) {
         tick();
@@ -1581,6 +1915,9 @@
     handleRoute();
     renderMain();
     renderStatus();
+
+    /* фон из IndexedDB подхватывается асинхронно, поверх уже показанного back_gif.gif */
+    loadBackgrounds();
 
     refreshAll(false);
 

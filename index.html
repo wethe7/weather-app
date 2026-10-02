@@ -13,6 +13,9 @@
 </head>
 <body data-theme="pixel">
 
+<!-- Основной фон приложения (back_gif.gif). Лежит под всем интерфейсом. -->
+<div id="app-bg" aria-hidden="true"></div>
+
 <div class="app">
 
   <!-- ══════════════ Шапка ══════════════ -->
@@ -32,6 +35,7 @@
         <button type="button" class="theme-btn" data-theme-value="pixel">Pixel</button>
         <button type="button" class="theme-btn" data-theme-value="ukiyo-e">Ukiyo-e</button>
       </div>
+      <button type="button" id="btnSettings" class="icon-btn" aria-label="Свой фон" title="Свой фон">⚙️</button>
       <button type="button" id="btnRefresh" class="icon-btn" aria-label="Обновить погоду" title="Обновить">
         <svg viewBox="0 0 24 24" width="18" height="18">
           <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
@@ -132,6 +136,52 @@
       <div class="detail-foot">Данные: Open-Meteo · обновление каждые 10 минут</div>
     </div>
   </section>
+
+  <!-- ══════════════ Модальное окно «Свой фон» ══════════════ -->
+  <div id="bgModal" class="modal" hidden>
+    <div class="modal-scrim" data-bg-close="1"></div>
+
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="bgModalTitle">
+      <div class="modal-head">
+        <h2 id="bgModalTitle" class="modal-title">Свой фон</h2>
+        <button type="button" id="btnBgClose" class="icon-btn" aria-label="Закрыть">×</button>
+      </div>
+
+      <p class="bg-note">Картинка хранится только на этом устройстве (IndexedDB) и подставляется
+        вместо <code>back_gif.gif</code> в выбранной теме. Максимум 5 МБ.</p>
+
+      <div class="bg-tabs" role="tablist" aria-label="Тема для своего фона">
+        <button type="button" class="bg-tab" data-bg-tab="pixel" role="tab">Pixel</button>
+        <button type="button" class="bg-tab" data-bg-tab="ukiyo-e" role="tab">Ukiyo-e</button>
+      </div>
+
+      <div class="bg-pane" data-bg-pane="pixel" role="tabpanel">
+        <div class="bg-preview" data-bg-preview="pixel"></div>
+        <label class="btn btn-primary bg-file">
+          <span>Загрузить изображение</span>
+          <input type="file" accept="image/*" data-bg-input="pixel" />
+        </label>
+        <div class="bg-actions">
+          <button type="button" class="btn btn-primary" data-bg-apply="pixel">Применить</button>
+          <button type="button" class="btn btn-ghost" data-bg-reset="pixel">Сбросить на стандартный</button>
+        </div>
+        <div class="bg-status" data-bg-status="pixel"></div>
+      </div>
+
+      <div class="bg-pane" data-bg-pane="ukiyo-e" role="tabpanel" hidden>
+        <div class="bg-preview" data-bg-preview="ukiyo-e"></div>
+        <label class="btn btn-primary bg-file">
+          <span>Загрузить изображение</span>
+          <input type="file" accept="image/*" data-bg-input="ukiyo-e" />
+        </label>
+        <div class="bg-actions">
+          <button type="button" class="btn btn-primary" data-bg-apply="ukiyo-e">Применить</button>
+          <button type="button" class="btn btn-ghost" data-bg-reset="ukiyo-e">Сбросить на стандартный</button>
+        </div>
+        <div class="bg-status" data-bg-status="ukiyo-e"></div>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </div>
